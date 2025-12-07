@@ -3,84 +3,708 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LifeDash - Daily Tracker</title>
+    <title>QuickPoll - Create & Vote</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
+
     <header>
-        <h1><i class="fas fa-chart-line"></i> LifeDash</h1>
-        <button id="theme-toggle" aria-label="Toggle Light/Dark Mode"><i class="fas fa-moon"></i></button>
+        <h1><i class="fas fa-chart-pie"></i> QuickPoll</h1>
     </header>
 
-    <main class="dashboard">
-        <section id="daily-score-card" class="card score-card">
-            <h2><i class="fas fa-star"></i> Daily Score</h2>
-            <div id="daily-score-display" class="score-display">
-                <span id="score-grade">N/A</span>
-                <p id="score-message">Complete your tasks to see your score!</p>
-            </div>
-            <button onclick="lifeDash.calculateDailyScore()">Calculate Score</button>
-        </section>
+    <main id="app-container">
+        </main>
 
-        <section id="habit-tracker-card" class="card">
-            <h2><i class="fas fa-check-circle"></i> Daily Habits</h2>
-            <div id="habit-list">
-                </div>
-        </section>
+    <div id="snackbar">Link Copied!</div>
 
-        <section id="mood-stress-card" class="card">
-            <h2><i class="fas fa-smile"></i> Mood & Stress</h2>
-            <div class="mood-selector">
-                <label for="mood">Mood:</label>
-                <select id="mood-select" onchange="lifeDash.saveMoodStress()">
-                    <option value="5">😁 Happy</option>
-                    <option value="4">😊 Good</option>
-                    <option value="3">😐 Neutral</option>
-                    <option value="2">😔 Sad</option>
-                    <option value="1">😢 Awful</option>
-                </select>
-            </div>
-            <div class="stress-tracker">
-                <label for="stress-level">Stress Level: <span id="stress-value">5</span>/10</label>
-                <input type="range" id="stress-slider" min="1" max="10" value="5" oninput="document.getElementById('stress-value').textContent=this.value; lifeDash.saveMoodStress()">
-            </div>
-        </section>
+    <script>
+        // --- script.js content starts here ---
 
-        <section id="meal-planner-card" class="card">
-            <h2><i class="fas fa-utensils"></i> Meal & Calorie Planner</h2>
-            <div class="meal-plan">
-                <div class="meal-input">
-                    <label for="breakfast-meal">Breakfast:</label>
-                    <input type="text" id="breakfast-meal" placeholder="e.g., Oatmeal" oninput="lifeDash.saveMeals()">
-                </div>
-                <div class="meal-input">
-                    <label for="lunch-meal">Lunch:</label>
-                    <input type="text" id="lunch-meal" placeholder="e.g., Salad w/ Chicken" oninput="lifeDash.saveMeals()">
-                </div>
-                <div class="meal-input">
-                    <label for="dinner-meal">Dinner:</label>
-                    <input type="text" id="dinner-meal" placeholder="e.g., Fish & Veggies" oninput="lifeDash.saveMeals()">
-                </div>
-            </div>
-            <div class="calorie-input">
-                <label for="calorie-count">Total Calories:</label>
-                <input type="number" id="calorie-count" placeholder="e.g., 2000" oninput="lifeDash.saveMeals()">
-            </div>
-            <button onclick="lifeDash.generateSimplePlan()">Generate Simple Plan</button>
-        </section>
+        const STORAGE_KEY = 'quickPollData';
+        const APP_CONTAINER = document.getElementById('app-container');
+        const SNACKBAR = document.getElementById('snackbar');
 
-        <section id="todo-routine-card" class="card">
-            <h2><i class="fas fa-clipboard-list"></i> To-Do & Routine</h2>
-            <div id="todo-list">
-                </div>
-            <div class="add-todo">
-                <input type="text" id="new-todo-input" placeholder="Add new to-do/routine item">
-                <button onclick="lifeDash.addTodoItem()"><i class="fas fa-plus"></i> Add</button>
-            </div>
-        </section>
-    </main>
+        /**
+         * LocalStorage Handlers
+         */
+        const Storage = {
+            load: () => {
+                const data = localStorage.getItem(STORAGE_KEY);
+                return data ? JSON.parse(data) : {};
+            },
+            save: (polls) => {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(polls));
+            },
+            getPolls: () => {
+                return Storage.load().polls || {};
+            },
+            getPoll: (id) => {
+                return Storage.getPolls()[id];
+            },
+            savePoll: (poll) => {
+                const data = Storage.load();
+                data.polls = data.polls || {};
+                data.polls[poll.id] = poll;
+                Storage.save(data);
+            }
+        };
 
-    <script src="script.js"></script>
+        /**
+         * Core Application Logic
+         */
+        const QuickPoll = {
+            init: () => {
+                // Determine if we are viewing a specific poll or the creation page
+                const hash = window.location.hash.substring(1);
+                if (hash) {
+                    QuickPoll.renderPollView(hash);
+                } else {
+                    QuickPoll.renderCreatePoll();
+                }
+                window.addEventListener('hashchange', () => {
+                    const newHash = window.location.hash.substring(1);
+                    if (newHash) {
+                        QuickPoll.renderPollView(newHash);
+                    } else {
+                        QuickPoll.renderCreatePoll();
+                    }
+                });
+            },
+
+            /**
+             * Renders the Poll Creation Form
+             */
+            renderCreatePoll: () => {
+                APP_CONTAINER.innerHTML = `
+                    <section class="card poll-creator">
+                        <h2>Create a New Poll</h2>
+                        <form id="poll-form">
+                            <div class="form-group">
+                                <label for="question">Poll Question:</label>
+                                <input type="text" id="question" required maxlength="100">
+                            </div>
+                            <div id="options-container">
+                                ${QuickPoll.generateOptionInput(1)}
+                                ${QuickPoll.generateOptionInput(2)}
+                            </div>
+                            <button type="button" id="add-option-btn"><i class="fas fa-plus"></i> Add Option</button>
+                            <button type="submit" class="submit-btn">Create Poll</button>
+                        </form>
+                    </section>
+                `;
+
+                document.getElementById('poll-form').addEventListener('submit', QuickPoll.handlePollCreation);
+                document.getElementById('add-option-btn').addEventListener('click', QuickPoll.addOption);
+                QuickPoll.updateAddOptionButtonState();
+            },
+
+            generateOptionInput: (index, value = '') => {
+                const isRemovable = index > 2;
+                return `
+                    <div class="form-group option-group" data-index="${index}">
+                        <label for="option-${index}">Option ${index}:</label>
+                        <div class="option-input-wrapper">
+                            <input type="text" id="option-${index}" class="poll-option-input" value="${value}" required maxlength="50">
+                            ${isRemovable ? `<button type="button" class="remove-option-btn" onclick="QuickPoll.removeOption(${index})"><i class="fas fa-times"></i></button>` : ''}
+                        </div>
+                    </div>
+                `;
+            },
+
+            addOption: () => {
+                const container = document.getElementById('options-container');
+                const currentOptions = container.querySelectorAll('.option-group').length;
+                if (currentOptions < 6) {
+                    const newIndex = currentOptions + 1;
+                    container.insertAdjacentHTML('beforeend', QuickPoll.generateOptionInput(newIndex));
+                }
+                QuickPoll.updateAddOptionButtonState();
+            },
+
+            removeOption: (index) => {
+                const elementToRemove = document.querySelector(`.option-group[data-index="${index}"]`);
+                if (elementToRemove) {
+                    elementToRemove.remove();
+                    // Re-index remaining options for clean look and logic
+                    QuickPoll.reIndexOptions();
+                }
+                QuickPoll.updateAddOptionButtonState();
+            },
+
+            reIndexOptions: () => {
+                const options = document.querySelectorAll('.poll-option-input');
+                const container = document.getElementById('options-container');
+                container.innerHTML = ''; // Clear container
+
+                options.forEach((input, i) => {
+                    const newIndex = i + 1;
+                    // Preserve the input value
+                    container.insertAdjacentHTML('beforeend', QuickPoll.generateOptionInput(newIndex, input.value));
+                });
+            },
+
+            updateAddOptionButtonState: () => {
+                const container = document.getElementById('options-container');
+                if (!container) return;
+                const currentOptions = container.querySelectorAll('.option-group').length;
+                const btn = document.getElementById('add-option-btn');
+                if (btn) {
+                    btn.disabled = currentOptions >= 6;
+                    btn.textContent = currentOptions >= 6 ? 'Max Options Reached (6)' : 'Add Option';
+                }
+            },
+
+            /**
+             * Handles form submission and stores the poll
+             */
+            handlePollCreation: (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const question = form.querySelector('#question').value.trim();
+                const optionInputs = form.querySelectorAll('.poll-option-input');
+                
+                // Get options and filter out empty ones
+                const options = Array.from(optionInputs)
+                    .map(input => ({
+                        text: input.value.trim(),
+                        votes: 0
+                    }))
+                    .filter(option => option.text !== '');
+
+                if (options.length < 2) {
+                    alert('Please provide at least two valid options.');
+                    return;
+                }
+
+                const newPoll = {
+                    id: QuickPoll.generateUniqueId(),
+                    question: question,
+                    options: options,
+                    totalVotes: 0,
+                    voters: {} // Tracks IPs/sessions that have voted (using ID for demo)
+                };
+
+                Storage.savePoll(newPoll);
+
+                // Show success animation and redirect
+                const creatorCard = document.querySelector('.poll-creator');
+                creatorCard.classList.add('success-animation');
+                setTimeout(() => {
+                    creatorCard.classList.remove('success-animation');
+                    window.location.hash = newPoll.id; // Redirect to the new poll
+                }, 800);
+            },
+
+            generateUniqueId: () => {
+                // Simple unique ID generator
+                return Math.random().toString(36).substring(2, 9);
+            },
+
+            /**
+             * Renders the View/Vote Page
+             */
+            renderPollView: (pollId) => {
+                const poll = Storage.getPoll(pollId);
+                if (!poll) {
+                    APP_CONTAINER.innerHTML = '<section class="card error-message"><h2>Poll Not Found</h2><p>The link you followed is invalid.</p><a href="#">Go Home</a></section>';
+                    return;
+                }
+
+                const hasVoted = localStorage.getItem(`voted_${pollId}`) === 'true';
+
+                APP_CONTAINER.innerHTML = `
+                    <section class="card poll-view" id="poll-view-card">
+                        <h2>${poll.question}</h2>
+                        <p class="total-votes-display">${poll.totalVotes} Votes</p>
+                        <div class="poll-options-list" data-poll-id="${pollId}">
+                            ${poll.options.map((option, index) => 
+                                QuickPoll.generateOptionElement(pollId, option, index, hasVoted)
+                            ).join('')}
+                        </div>
+                        <div class="share-area">
+                            <input type="text" id="poll-link" value="${window.location.href}" readonly>
+                            <button class="copy-link-btn" onclick="QuickPoll.copyPollLink('${pollId}')" data-tooltip="Copy Link">
+                                <i class="fas fa-copy"></i> Copy Link
+                            </button>
+                        </div>
+                        <a href="#" class="back-link"><i class="fas fa-arrow-left"></i> Create New Poll</a>
+                    </section>
+                `;
+
+                if (!hasVoted) {
+                    document.querySelectorAll('.poll-option-btn').forEach(button => {
+                        button.addEventListener('click', QuickPoll.handleVote);
+                    });
+                } else {
+                    QuickPoll.updateResultsDisplay(poll);
+                }
+            },
+
+            generateOptionElement: (pollId, option, index, hasVoted) => {
+                if (hasVoted) {
+                    return `
+                        <div class="option-result">
+                            <span class="option-text">${option.text}</span>
+                            <div class="bar-container">
+                                <div class="bar-fill" id="bar-${pollId}-${index}" style="width: 0%;" data-votes="${option.votes}"></div>
+                            </div>
+                            <span class="percentage" id="percent-${pollId}-${index}">0% (${option.votes})</span>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <button class="poll-option-btn" data-poll-id="${pollId}" data-option-index="${index}">
+                            ${option.text}
+                        </button>
+                    `;
+                }
+            },
+
+            /**
+             * Handles voting action
+             */
+            handleVote: (e) => {
+                const btn = e.currentTarget;
+                const pollId = btn.dataset.pollId;
+                const optionIndex = parseInt(btn.dataset.optionIndex);
+                let poll = Storage.getPoll(pollId);
+
+                // Prevent multiple votes per session (demo)
+                if (localStorage.getItem(`voted_${pollId}`) === 'true') {
+                    return;
+                }
+
+                // Update poll data
+                poll.options[optionIndex].votes++;
+                poll.totalVotes++;
+                Storage.savePoll(poll);
+                localStorage.setItem(`voted_${pollId}`, 'true');
+
+                // Re-render to show results and disable voting
+                QuickPoll.renderPollView(pollId);
+            },
+
+            /**
+             * Displays animated results after voting
+             */
+            updateResultsDisplay: (poll) => {
+                poll.options.forEach((option, index) => {
+                    const percentage = poll.totalVotes > 0 ? (option.votes / poll.totalVotes) * 100 : 0;
+                    
+                    const barFill = document.getElementById(`bar-${poll.id}-${index}`);
+                    const percentSpan = document.getElementById(`percent-${poll.id}-${index}`);
+
+                    if (barFill) {
+                        // Apply animation via CSS transition
+                        barFill.style.width = `${percentage.toFixed(1)}%`;
+                    }
+                    if (percentSpan) {
+                         // Update percentage text after a short delay to coincide with bar animation
+                         setTimeout(() => {
+                            percentSpan.textContent = `${percentage.toFixed(1)}% (${option.votes})`;
+                        }, 500);
+                    }
+                });
+                document.querySelector('.total-votes-display').textContent = `${poll.totalVotes} Votes`;
+            },
+
+            /**
+             * Copy Poll Link Feature
+             */
+            copyPollLink: (pollId) => {
+                const linkInput = document.getElementById('poll-link');
+                linkInput.select();
+                linkInput.setSelectionRange(0, 99999); // For mobile devices
+
+                // Copy the text inside the text field
+                navigator.clipboard.writeText(linkInput.value).then(() => {
+                    // Show tooltip/snackbar animation
+                    SNACKBAR.textContent = `Link Copied! ID: ${pollId}`;
+                    SNACKBAR.className = "show";
+                    setTimeout(() => { 
+                        SNACKBAR.className = SNACKBAR.className.replace("show", ""); 
+                    }, 3000);
+                }).catch(err => {
+                    console.error('Could not copy text: ', err);
+                });
+            }
+        };
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', QuickPoll.init);
+
+        // --- script.js content ends here ---
+    </script>
 </body>
 </html>
+
+<style>
+    :root {
+        --color-primary: #007bff; /* Blue */
+        --color-accent: #28a745; /* Green */
+        --color-background: #f8f9fa;
+        --color-card-bg: #ffffff;
+        --color-text: #343a40;
+        --color-shadow: rgba(0, 0, 0, 0.1);
+        --color-danger: #dc3545;
+        --border-radius: 8px;
+    }
+
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: var(--color-background);
+        color: var(--color-text);
+        line-height: 1.6;
+        padding-top: 60px; /* Space for fixed header */
+        min-height: 100vh;
+    }
+
+    header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background-color: var(--color-primary);
+        color: white;
+        padding: 15px 20px;
+        box-shadow: 0 2px 5px var(--color-shadow);
+        z-index: 100;
+    }
+
+    header h1 {
+        font-size: 1.8rem;
+        font-weight: 600;
+    }
+
+    /* --- General Layout and Cards --- */
+    #app-container {
+        display: flex;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    .card {
+        background-color: var(--color-card-bg);
+        padding: 30px;
+        border-radius: var(--border-radius);
+        box-shadow: 0 4px 12px var(--color-shadow);
+        width: 100%;
+        max-width: 600px;
+        transition: transform 0.3s ease-in-out;
+    }
+
+    .card h2 {
+        font-size: 2rem;
+        margin-bottom: 25px;
+        color: var(--color-primary);
+        border-bottom: 2px solid var(--color-primary);
+        padding-bottom: 10px;
+    }
+
+    /* --- Form Styles --- */
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    input[type="text"] {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ced4da;
+        border-radius: var(--border-radius);
+        font-size: 1rem;
+        transition: border-color 0.3s;
+    }
+
+    input[type="text"]:focus {
+        border-color: var(--color-primary);
+        outline: none;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+
+    .option-input-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .option-input-wrapper input {
+        margin-bottom: 0;
+    }
+
+    .remove-option-btn {
+        background: var(--color-danger);
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: background 0.2s, transform 0.1s;
+    }
+
+    .remove-option-btn:hover {
+        background: #c82333;
+        transform: scale(1.05);
+    }
+
+    /* --- Button Styles --- */
+    button {
+        background-color: var(--color-accent);
+        color: white;
+        border: none;
+        padding: 12px 20px;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 600;
+        margin-top: 10px;
+        transition: background-color 0.2s, transform 0.1s;
+    }
+
+    button:hover:not(:disabled) {
+        background-color: #218838;
+        box-shadow: 0 3px 8px rgba(40, 167, 69, 0.3);
+    }
+
+    button:active:not(:disabled) {
+        transform: scale(0.98);
+    }
+
+    #add-option-btn {
+        background-color: #6c757d;
+        margin-right: 10px;
+    }
+    #add-option-btn:hover:not(:disabled) {
+        background-color: #5a6268;
+    }
+
+    button:disabled {
+        background-color: #adb5bd;
+        cursor: not-allowed;
+    }
+
+    .submit-btn {
+        background-color: var(--color-primary);
+        margin-top: 20px;
+        width: 100%;
+    }
+    .submit-btn:hover {
+        background-color: #0056b3;
+    }
+
+    /* --- Poll Creation Success Animation --- */
+    .poll-creator.success-animation {
+        border: 4px solid var(--color-accent);
+        box-shadow: 0 0 20px rgba(40, 167, 69, 0.5);
+        transform: scale(1.02);
+    }
+
+    /* --- Poll View (Voting) Styles --- */
+    .poll-option-btn {
+        width: 100%;
+        text-align: left;
+        background-color: #e9ecef;
+        color: var(--color-text);
+        border: 1px solid #ced4da;
+        padding: 15px;
+        margin-top: 10px;
+        font-size: 1.1rem;
+        transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
+    }
+
+    /* Option Hover Animation */
+    .poll-option-btn:hover {
+        background-color: #e2e6ea;
+        border-color: var(--color-primary);
+        transform: translateY(-2px);
+    }
+
+    .total-votes-display {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: var(--color-accent);
+        margin-bottom: 20px;
+        text-align: right;
+    }
+    
+    .back-link {
+        display: inline-block;
+        margin-top: 25px;
+        text-decoration: none;
+        color: var(--color-primary);
+        font-weight: 600;
+        transition: color 0.2s;
+    }
+    .back-link:hover {
+        color: #0056b3;
+    }
+
+    /* --- Results Display Styles --- */
+    .option-result {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        font-size: 1.1rem;
+    }
+
+    .option-text {
+        width: 30%;
+        min-width: 100px;
+        font-weight: 600;
+        padding-right: 15px;
+    }
+
+    .bar-container {
+        flex-grow: 1;
+        background-color: #e9ecef;
+        border-radius: var(--border-radius);
+        height: 25px;
+        margin-right: 15px;
+        overflow: hidden;
+    }
+
+    .bar-fill {
+        height: 100%;
+        background-color: var(--color-accent);
+        /* Voting Result Bar Filling Animation */
+        transition: width 1s cubic-bezier(0.25, 0.8, 0.25, 1);
+        border-radius: var(--border-radius);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .percentage {
+        width: 15%;
+        min-width: 80px;
+        text-align: right;
+        font-weight: bold;
+        color: var(--color-accent);
+    }
+
+    /* --- Share Area & Copy Button --- */
+    .share-area {
+        display: flex;
+        gap: 10px;
+        margin-top: 30px;
+        align-items: center;
+        padding-top: 20px;
+        border-top: 1px dashed #ced4da;
+    }
+
+    #poll-link {
+        flex-grow: 1;
+        cursor: text;
+        background-color: #f1f1f1;
+    }
+    #poll-link:focus {
+        box-shadow: none;
+    }
+
+    .copy-link-btn {
+        margin-top: 0;
+        flex-shrink: 0;
+        background-color: var(--color-primary);
+    }
+    .copy-link-btn:hover {
+        background-color: #0056b3;
+    }
+
+    /* --- Snackbar/Tooltip Animation --- */
+    #snackbar {
+        visibility: hidden; 
+        min-width: 250px;
+        background-color: #333; 
+        color: #fff; 
+        text-align: center; 
+        border-radius: var(--border-radius); 
+        padding: 16px; 
+        position: fixed; 
+        z-index: 1; 
+        left: 50%; 
+        bottom: 30px; 
+        transform: translateX(-50%);
+    }
+
+    #snackbar.show {
+        visibility: visible;
+        /* Tooltip Fade In/Out Animation */
+        -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        animation: fadein 0.5s, fadeout 0.5s 2.5s;
+    }
+
+    @-webkit-keyframes fadein {
+        from {bottom: 0; opacity: 0;} 
+        to {bottom: 30px; opacity: 1;}
+    }
+
+    @keyframes fadein {
+        from {bottom: 0; opacity: 0;}
+        to {bottom: 30px; opacity: 1;}
+    }
+
+    @-webkit-keyframes fadeout {
+        from {bottom: 30px; opacity: 1;} 
+        to {bottom: 0; opacity: 0;}
+    }
+
+    @keyframes fadeout {
+        from {bottom: 30px; opacity: 1;}
+        to {bottom: 0; opacity: 0;}
+    }
+
+    /* --- Mobile Responsiveness --- */
+    @media (max-width: 576px) {
+        header h1 {
+            font-size: 1.5rem;
+        }
+
+        .card {
+            padding: 20px;
+        }
+
+        .card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+        }
+
+        .option-text {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+
+        .option-result {
+            flex-wrap: wrap;
+        }
+
+        .bar-container, .percentage {
+            margin-right: 0;
+        }
+        
+        .bar-container {
+            width: 70%;
+        }
+
+        .percentage {
+            width: 30%;
+        }
+        
+        .share-area {
+            flex-direction: column;
+        }
+        
+        .copy-link-btn {
+            width: 100%;
+        }
+    }
+</style>
